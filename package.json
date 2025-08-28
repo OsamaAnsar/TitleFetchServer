@@ -1,0 +1,22 @@
+{
+  "name": "title-fetcher-server",
+  "version": "1.0.0",
+  "main": "callbackServer.js",
+  "scripts": {
+    "start:callbacks": "node callbackServer.js",
+    "start:async": "node asyncLibServer.js",
+    "start:promises": "node promisesServer.js",
+    "start:await": "node asyncAwaitServer.js",
+    "start:rxjs": "node rxjsStreamsServer.js",
+    "install-deps": "npm install async rxjs"
+  },
+  "dependencies": {
+    "async": "^3.2.4",
+    "rxjs": "^7.8.1"
+  },
+  "author": "Osama Ansar",
+  "license": "MIT",
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}
