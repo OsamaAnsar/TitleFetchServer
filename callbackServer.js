@@ -1,40 +1,65 @@
 const http = require('http');
 const https = require('https');
 const url = require('url');
+const {
+  normalizeURL,
+  extractTitle,
+  generateHTML,
+  parseAddresses,
+} = require('./utils');
 
 const PORT = 3000;
 
 function fetchTitle(address, callback) {
-  // Normalize the URL
-  let urlToFetch = address;
-  if (!address.startsWith('http://') && !address.startsWith('https://')) {
-    urlToFetch = 'https://' + address;
-  }
+  const urlToFetch = normalizeURL(address);
 
   const parsedUrl = url.parse(urlToFetch);
   const client = parsedUrl.protocol === 'https:' ? https : http;
-  
+
   const options = {
     hostname: parsedUrl.hostname,
     port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
     path: parsedUrl.path || '/',
     method: 'GET',
-    timeout: 5000,
+    timeout: 10000,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Node.js Title Fetcher)'
-    }
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      Accept:
+        'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Accept-Encoding': 'identity',
+      Connection: 'close',
+    },
   };
 
   const req = client.request(options, (res) => {
+    if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+      const redirectUrl = res.headers.location;
+      const fullRedirectUrl = redirectUrl.startsWith('http')
+        ? redirectUrl
+        : parsedUrl.protocol + '//' + parsedUrl.host + redirectUrl;
+
+      if (!options._redirectCount) options._redirectCount = 0;
+      if (options._redirectCount < 3) {
+        options._redirectCount++;
+        return fetchTitle(fullRedirectUrl, callback);
+      }
+    }
+
     let data = '';
-    
+
     res.on('data', (chunk) => {
       data += chunk;
+      if (data.length > 1024 * 1024) {
+        res.destroy();
+        callback(null, { address, title: 'NO RESPONSE' });
+        return;
+      }
     });
-    
+
     res.on('end', () => {
-      const titleMatch = data.match(/<title[^>]*>(.*?)<\/title>/i);
-      const title = titleMatch ? titleMatch[1].trim() : 'NO RESPONSE';
+      const title = extractTitle(data);
       callback(null, { address, title });
     });
   });
@@ -48,7 +73,7 @@ function fetchTitle(address, callback) {
     callback(null, { address, title: 'NO RESPONSE' });
   });
 
-  req.setTimeout(5000);
+  req.setTimeout(10000);
   req.end();
 }
 
@@ -65,7 +90,7 @@ function fetchAllTitles(addresses, callback) {
     fetchTitle(address, (err, result) => {
       results[index] = result;
       completed++;
-      
+
       if (completed === total) {
         callback(null, results);
       }
@@ -73,32 +98,17 @@ function fetchAllTitles(addresses, callback) {
   });
 }
 
-function generateHTML(results) {
-  const listItems = results.map(result => 
-    `<li> ${result.address} - "${result.title}" </li>`
-  ).join('\n');
-
-  return `<html>
-<head></head>
-<body>
-<ul>
-<h1> Following are the titles of given websites: </h1>
-${listItems}</ul>
-</body>
-</html>`;
-}
-
 const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
-  
+
   if (req.method === 'GET' && parsedUrl.pathname === '/I/want/title') {
-    const addresses = Array.isArray(parsedUrl.query.address) 
-      ? parsedUrl.query.address 
-      : parsedUrl.query.address ? [parsedUrl.query.address] : [];
+    const addresses = parseAddresses(parsedUrl.query);
 
     if (addresses.length === 0) {
       res.writeHead(400, { 'Content-Type': 'text/html' });
-      res.end('<html><body><h1>Error: No addresses provided</h1></body></html>');
+      res.end(
+        '<html><body><h1>Error: No addresses provided</h1></body></html>'
+      );
       return;
     }
 
@@ -121,5 +131,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log('Try: http://localhost:3000/I/want/title/?address=google.com&address=github.com');
+  console.log(
+    'Try: http://localhost:3000/I/want/title?address=github.com&address=bitbucket.com&address=56566'
+  );
 });
